@@ -32,6 +32,16 @@ float temperatura;
 int32_t pressao;
 float umidade;
 
+int limiteMAX_temp = 35;
+int limiteMAX_umi = 85;
+int limiteMAX_pressao = 1013;
+int limiteMIN_temp = 20;
+int limiteMIN_umi = 30;
+int limiteMIN_pressao = 950;
+int offset_temp = 0;
+int offset_umi = 0;
+int offset_pressao = 0;
+
 // Protótipos das funções
 void setup();
 void gpio_irq_handler(uint gpio, uint32_t events);
@@ -62,12 +72,12 @@ int main() {
     while (1) {
 
         bmp280_read_raw(I2C_PORT_SENSORS, &raw_temp_bmp, &raw_pressure);
-        int32_t temperature_bmp = bmp280_convert_temp(raw_temp_bmp, &params);
-        pressao = bmp280_convert_pressure(raw_pressure, raw_temp_bmp, &params) / 1000; // kPa
+        int32_t temperature_bmp = bmp280_convert_temp(raw_temp_bmp, &params); 
+        pressao = (bmp280_convert_pressure(raw_pressure, raw_temp_bmp, &params) / 1000) + offset_pressao; // kPa
 
         if (aht20_read(I2C_PORT_SENSORS, &data)) {
-            temperatura = (data.temperature + (temperature_bmp / 100.0)) / 2.0; // Média das temperaturas
-            umidade = data.humidity;
+            temperatura = ((data.temperature + (temperature_bmp / 100.0)) / 2.0) + offset_temp; // Média das temperaturas
+            umidade = data.humidity + offset_umi;
         }
         else {
             printf("Erro ao ler AHT20\n");
