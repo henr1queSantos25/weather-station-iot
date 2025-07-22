@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "lwip/tcp.h"
 #include <stdio.h>
+#include <limits.h>
 
 //
 #include "web.h"
@@ -9,6 +10,9 @@
 #include "bmp280.h"
 #include "ssd1306.h"
 #include "button.h"
+#include "rgb.h"
+#include "ws2812.h"
+#include "buzzer.h"
 
 // Definições dos pinos
 #define I2C_PORT_SENSORS i2c0
@@ -18,6 +22,10 @@
 #define I2C_SDA_DISP 14
 #define I2C_SCL_DISP 15
 #define BUTTON_A 5
+#define LED_GREEN 11
+#define LED_BLUE 12
+#define LED_RED 13
+#define BUZZER 10
 ssd1306_t ssd; // Estrutura do display
 bool volatile modo_display = true;  // Modo de exibição
 uint volatile last_time = 0; 
@@ -32,12 +40,12 @@ float temperatura;
 int32_t pressao;
 float umidade;
 
-int limiteMAX_temp = 35;
-int limiteMAX_umi = 85;
-int limiteMAX_pressao = 1013;
-int limiteMIN_temp = 20;
-int limiteMIN_umi = 30;
-int limiteMIN_pressao = 950;
+int limiteMAX_temp = INT_MAX;
+int limiteMAX_umi = INT_MAX;
+int limiteMAX_pressao = INT_MAX;
+int limiteMIN_temp = INT_MIN;
+int limiteMIN_umi = INT_MIN;
+int limiteMIN_pressao = INT_MIN;
 int offset_temp = 0;
 int offset_umi = 0;
 int offset_pressao = 0;
@@ -46,6 +54,7 @@ int offset_pressao = 0;
 void setup();
 void gpio_irq_handler(uint gpio, uint32_t events);
 void info_display(int32_t temperatura_bmp, float temperatura_aht, int32_t pressao, float umidade, char *ip_str);
+void verificar_limites();
 
 int main() {
     setup();
@@ -77,7 +86,7 @@ int main() {
 
         if (aht20_read(I2C_PORT_SENSORS, &data)) {
             temperatura = ((data.temperature + (temperature_bmp / 100.0)) / 2.0) + offset_temp; // Média das temperaturas
-            umidade = data.humidity + offset_umi;
+            umidade = (data.humidity + offset_umi) > 100 ? 100 : (data.humidity + offset_umi); // Limita a umidade a 100%
         }
         else {
             printf("Erro ao ler AHT20\n");
@@ -85,6 +94,8 @@ int main() {
             umidade = 0.0;
         }
 
+        verificar_limites(); // Verifica os limites e acende o LED correspondente
+        
         // Exibe as informações no display
         info_display(temperature_bmp, temperatura, pressao, umidade, ip_str);
 
@@ -105,6 +116,11 @@ void setup() {
     aht20_init(I2C_PORT_SENSORS);
     bmp280_init(I2C_PORT_SENSORS);
     setup_button(BUTTON_A);
+    setupLED(LED_GREEN);
+    setupLED(LED_RED);
+    setupLED(LED_BLUE);
+    setup_PIO();
+    init_pwm_buzzer(BUZZER);
 }
 
 void gpio_irq_handler(uint gpio, uint32_t events) {
@@ -157,4 +173,25 @@ void info_display(int32_t temperatura_bmp, float temperatura_aht, int32_t pressa
     }
 
     ssd1306_send_data(&ssd); // Atualiza o display com as alterações
+}
+
+void verificar_limites() {
+    if (temperatura > limiteMAX_temp || umidade > limiteMAX_umi || pressao > limiteMAX_pressao) {
+        alarmePWM(BUZZER);
+        desenhoX_vermelho();
+        gpio_put(LED_GREEN, false); // Desliga o LED verde
+        gpio_put(LED_BLUE, false); // Desliga o LED azul
+        piscar_led(LED_RED); // Pisca o LED vermelho
+    } else if (temperatura < limiteMIN_temp || umidade < limiteMIN_umi || pressao < limiteMIN_pressao) {
+        alarmePWM(BUZZER);
+        desenhoX_amarelo();
+        gpio_put(LED_BLUE, false); // Desliga o LED azul
+        piscar_dois_leds(LED_RED, LED_GREEN); // Pisca os LEDs vermelho e verde
+    } else {
+        buzzer_pwm_off(BUZZER); // Desliga o buzzer
+        apagarMatriz();
+        gpio_put(LED_RED, false); // Desliga o LED vermelho
+        gpio_put(LED_BLUE, false); // Desliga o LED azul
+        piscar_led(LED_GREEN); // Pisca o LED verde
+    }
 }

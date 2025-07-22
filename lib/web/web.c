@@ -39,6 +39,7 @@ int inicializar_wifi(char *ip_str, char *WIFI_SSID, char *WIFI_PASS)
 }
 
 // HTML da interface web - Página completa com estilos CSS e JavaScript
+
 const char HTML_BODY[] =
     "<!DOCTYPE html><html lang='pt-BR'><head>"
     "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
@@ -53,6 +54,10 @@ const char HTML_BODY[] =
     ".val{display:flex;align-items:center;justify-content:center;margin-bottom:20px}"
     ".v{font-size:2.5rem;font-weight:bold;margin-right:10px}.u{font-size:1.2rem;color:#718096}"
     ".t .v{color:#e53e3e}.h .v{color:#3182ce}.p .v{color:#38a169}.ch{height:200px;position:relative}"
+    ".alert{margin-bottom:15px;padding:10px;border-radius:8px;font-weight:bold;text-align:center;display:none}"
+    ".alert.show{display:block}.alert.danger{background:#fed7d7;color:#c53030;border:1px solid #feb2b2}"
+    ".alert.success{background:#c6f6d5;color:#2f855a;border:1px solid #9ae6b4}"
+    ".status{font-size:0.9rem;color:#666;margin-bottom:10px;text-align:center}"
     ".lim{background:#fff;border-radius:15px;padding:20px;margin-top:20px;box-shadow:0 10px 30px rgba(0,0,0,0.2)}"
     ".cal{background:#fff;border-radius:15px;padding:20px;margin-top:20px;box-shadow:0 10px 30px rgba(0,0,0,0.2)}"
     ".lg{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}"
@@ -70,9 +75,18 @@ const char HTML_BODY[] =
     "</style></head><body>"
     "<div class='ctn'><div class='hdr'><h1>🌤️ Weather Station IoT</h1><p>Monitoramento em Tempo Real</p></div>"
     "<div class='dash'>"
-    "<div class='cd t'><h3>🌡️ Temperatura</h3><div class='val'><span class='v' id='tv'>--</span><span class='u'>°C</span></div><div class='ch'><canvas id='tc'></canvas></div></div>"
-    "<div class='cd h'><h3>💧 Umidade</h3><div class='val'><span class='v' id='hv'>--</span><span class='u'>%</span></div><div class='ch'><canvas id='hc'></canvas></div></div>"
-    "<div class='cd p'><h3>🌪️ Pressão</h3><div class='val'><span class='v' id='pv'>--</span><span class='u'>kPa</span></div><div class='ch'><canvas id='pc'></canvas></div></div>"
+    "<div class='cd t'><h3>🌡️ Temperatura</h3>"
+    "<div class='alert' id='t-alert'></div>"
+    "<div class='status' id='t-status'>Limites: -- a -- °C</div>"
+    "<div class='val'><span class='v' id='tv'>--</span><span class='u'>°C</span></div><div class='ch'><canvas id='tc'></canvas></div></div>"
+    "<div class='cd h'><h3>💧 Umidade</h3>"
+    "<div class='alert' id='h-alert'></div>"
+    "<div class='status' id='h-status'>Limites: -- a -- %</div>"
+    "<div class='val'><span class='v' id='hv'>--</span><span class='u'>%</span></div><div class='ch'><canvas id='hc'></canvas></div></div>"
+    "<div class='cd p'><h3>🌪️ Pressão</h3>"
+    "<div class='alert' id='p-alert'></div>"
+    "<div class='status' id='p-status'>Limites: -- a -- kPa</div>"
+    "<div class='val'><span class='v' id='pv'>--</span><span class='u'>kPa</span></div><div class='ch'><canvas id='pc'></canvas></div></div>"
     "</div>"
     "<div class='cal'><h3>🔧 Calibração dos Sensores (Offset)</h3>"
     "<div class='lg'>"
@@ -105,6 +119,25 @@ const char HTML_BODY[] =
     "const tc=new Chart(document.getElementById('tc'),{type:'line',data:{labels:tl,datasets:[{label:'Temperatura (°C)',data:td,borderColor:'#e53e3e',backgroundColor:'rgba(229,62,62,0.1)',borderWidth:2,fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:false},x:{}},plugins:{legend:{display:false}}}});"
     "const hc=new Chart(document.getElementById('hc'),{type:'line',data:{labels:tl,datasets:[{label:'Umidade (%)',data:hd,borderColor:'#3182ce',backgroundColor:'rgba(49,130,206,0.1)',borderWidth:2,fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100},x:{}},plugins:{legend:{display:false}}}});"
     "const pc=new Chart(document.getElementById('pc'),{type:'line',data:{labels:tl,datasets:[{label:'Pressão (kPa)',data:pd,borderColor:'#38a169',backgroundColor:'rgba(56,161,105,0.1)',borderWidth:2,fill:true,tension:0.4}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:false},x:{}},plugins:{legend:{display:false}}}});"
+    "function chkLim(v,mi,ma,type,unit){"
+    "  const alert=document.getElementById(type+'-alert');"
+    "  const status=document.getElementById(type+'-status');"
+    "  const minTxt=mi!==null?mi:'--';"
+    "  const maxTxt=ma!==null?ma:'--';"
+    "  status.textContent='Limites: '+minTxt+' a '+maxTxt+' '+unit;"
+    "  if(mi!==null&&v<mi){"
+    "    alert.textContent='⚠️ Valor ABAIXO do limite mínimo ('+mi+unit+')';"
+    "    alert.className='alert danger show';"
+    "  }else if(ma!==null&&v>ma){"
+    "    alert.textContent='⚠️ Valor ACIMA do limite máximo ('+ma+unit+')';"
+    "    alert.className='alert danger show';"
+    "  }else if(mi!==null||ma!==null){"
+    "    alert.textContent='✅ Valor dentro dos limites';"
+    "    alert.className='alert success show';"
+    "  }else{"
+    "    alert.className='alert';"
+    "  }"
+    "}"
     "function sto(){"
     "  let v=parseFloat(document.getElementById('toff').value);"
     "  if(isNaN(v)||v<-50||v>50){alert('Offset de temperatura inválido (-50 a +50 °C)');return;}"
@@ -130,7 +163,26 @@ const char HTML_BODY[] =
     "function shx(){let v=parseFloat(document.getElementById('hmax').value);if(isNaN(v)||v<0||v>100||lm.h.mi!==null&&v<=lm.h.mi){alert('Valor inválido');return;}fetch('/config/limiteMAX_umi/'+Math.round(v)).then(()=>{lm.h.ma=Math.round(v);alert('Max umidade: '+v);}).catch(()=>alert('Erro'));}"
     "function spm(){let v=parseFloat(document.getElementById('pmin').value);if(isNaN(v)||v<50||v>150||lm.p.ma!==null&&v>=lm.p.ma){alert('Valor inválido');return;}fetch('/config/limiteMIN_pressao/'+Math.round(v)).then(()=>{lm.p.mi=Math.round(v);alert('Min pressão: '+v);}).catch(()=>alert('Erro'));}"
     "function spx(){let v=parseFloat(document.getElementById('pmax').value);if(isNaN(v)||v<50||v>150||lm.p.mi!==null&&v<=lm.p.mi){alert('Valor inválido');return;}fetch('/config/limiteMAX_pressao/'+Math.round(v)).then(()=>{lm.p.ma=Math.round(v);alert('Max pressão: '+v);}).catch(()=>alert('Erro'));}"
-    "function upd(){fetch('/dados').then(r=>r.json()).then(d=>{const t=new Date().toLocaleTimeString();document.getElementById('tv').textContent=d.temperatura.toFixed(1);document.getElementById('hv').textContent=d.umidade.toFixed(1);document.getElementById('pv').textContent=d.pressao;tl.push(t);td.push(d.temperatura);hd.push(d.umidade);pd.push(d.pressao);if(tl.length>max){tl.shift();td.shift();hd.shift();pd.shift();}tc.update();hc.update();pc.update();}).catch(e=>console.error('Erro:',e));}"
+    "function upd(){fetch('/dados').then(r=>r.json()).then(d=>{"
+    "  const t=new Date().toLocaleTimeString();"
+    "  document.getElementById('tv').textContent=d.temperatura.toFixed(1);"
+    "  document.getElementById('hv').textContent=d.umidade.toFixed(1);"
+    "  document.getElementById('pv').textContent=d.pressao;"
+    "  "
+    "  if(d.limiteMIN_temp !== undefined && d.limiteMIN_temp !== -2147483648) lm.t.mi = d.limiteMIN_temp; else lm.t.mi = null;"
+    "  if(d.limiteMAX_temp !== undefined && d.limiteMAX_temp !== 2147483647) lm.t.ma = d.limiteMAX_temp; else lm.t.ma = null;"
+    "  if(d.limiteMIN_umi !== undefined && d.limiteMIN_umi !== -2147483648) lm.h.mi = d.limiteMIN_umi; else lm.h.mi = null;"
+    "  if(d.limiteMAX_umi !== undefined && d.limiteMAX_umi !== 2147483647) lm.h.ma = d.limiteMAX_umi; else lm.h.ma = null;"
+    "  if(d.limiteMIN_pressao !== undefined && d.limiteMIN_pressao !== -2147483648) lm.p.mi = d.limiteMIN_pressao; else lm.p.mi = null;"
+    "  if(d.limiteMAX_pressao !== undefined && d.limiteMAX_pressao !== 2147483647) lm.p.ma = d.limiteMAX_pressao; else lm.p.ma = null;"
+    "  "
+    "  chkLim(d.temperatura,lm.t.mi,lm.t.ma,'t','°C');"
+    "  chkLim(d.umidade,lm.h.mi,lm.h.ma,'h','%');"
+    "  chkLim(d.pressao,lm.p.mi,lm.p.ma,'p','kPa');"
+    "  tl.push(t);td.push(d.temperatura);hd.push(d.umidade);pd.push(d.pressao);"
+    "  if(tl.length>max){tl.shift();td.shift();hd.shift();pd.shift();}"
+    "  tc.update();hc.update();pc.update();"
+    "}).catch(e=>console.error('Erro:',e));}"
     "upd();setInterval(upd,1000);"
     "</script></body></html>";
 
@@ -216,10 +268,16 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
 
     // Rota para status em JSON - retorna dados atuais do sistema
     if (strstr(req, "GET /dados")) {
-        char json_payload[96];
+        char json_payload[256];
         int json_len = snprintf(json_payload, sizeof(json_payload),
-                                "{\"temperatura\":%.2f,\"pressao\":%d,\"umidade\":%.2f}\r\n",
-                                temperatura, pressao, umidade);
+                            "{\"temperatura\":%.2f,\"pressao\":%d,\"umidade\":%.2f,"
+                            "\"limiteMIN_temp\":%d,\"limiteMAX_temp\":%d,"
+                            "\"limiteMIN_umi\":%d,\"limiteMAX_umi\":%d,"
+                            "\"limiteMIN_pressao\":%d,\"limiteMAX_pressao\":%d}\r\n",
+                            temperatura, pressao, umidade,
+                            limiteMIN_temp, limiteMAX_temp,
+                            limiteMIN_umi, limiteMAX_umi,
+                            limiteMIN_pressao, limiteMAX_pressao);
 
         //printf("[DEBUG] JSON: %s\n", json_payload);
 

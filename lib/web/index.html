@@ -104,6 +104,38 @@
       position: relative
     }
 
+    .alert {
+      margin-bottom: 15px;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      text-align: center;
+      display: none
+    }
+
+    .alert.show {
+      display: block
+    }
+
+    .alert.danger {
+      background: #fed7d7;
+      color: #c53030;
+      border: 1px solid #feb2b2
+    }
+
+    .alert.success {
+      background: #c6f6d5;
+      color: #2f855a;
+      border: 1px solid #9ae6b4
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 10px;
+      text-align: center
+    }
+
     .lim {
       background: #fff;
       border-radius: 15px;
@@ -242,16 +274,22 @@
     <div class='dash'>
       <div class='cd t'>
         <h3>🌡️ Temperatura</h3>
+        <div class='alert' id='t-alert'></div>
+        <div class='status' id='t-status'>Limites: -- a -- °C</div>
         <div class='val'><span class='v' id='tv'>--</span><span class='u'>°C</span></div>
         <div class='ch'><canvas id='tc'></canvas></div>
       </div>
       <div class='cd h'>
         <h3>💧 Umidade</h3>
+        <div class='alert' id='h-alert'></div>
+        <div class='status' id='h-status'>Limites: -- a -- %</div>
         <div class='val'><span class='v' id='hv'>--</span><span class='u'>%</span></div>
         <div class='ch'><canvas id='hc'></canvas></div>
       </div>
       <div class='cd p'>
         <h3>🌪️ Pressão</h3>
+        <div class='alert' id='p-alert'></div>
+        <div class='status' id='p-status'>Limites: -- a -- kPa</div>
         <div class='val'><span class='v' id='pv'>--</span><span class='u'>kPa</span></div>
         <div class='ch'><canvas id='pc'></canvas></div>
       </div>
@@ -313,16 +351,9 @@
     </div>
   </div>
   <script>
-    // Dados e limites
-    let td = [], hd = [], pd = [], tl = [];
-    let max = 20;
-    let lm = {
-      t: { mi: null, ma: null },
-      h: { mi: null, ma: null },
-      p: { mi: null, ma: null }
-    };
+    let td = [], hd = [], pd = [], tl = [], max = 20;
+    let lm = { t: { mi: null, ma: null }, h: { mi: null, ma: null }, p: { mi: null, ma: null } };
 
-    // Gráficos
     const tc = new Chart(document.getElementById('tc'), {
       type: 'line',
       data: {
@@ -340,10 +371,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        scales: {
-          y: { beginAtZero: false },
-          x: {}
-        },
+        scales: { y: { beginAtZero: false }, x: {} },
         plugins: { legend: { display: false } }
       }
     });
@@ -365,10 +393,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        scales: {
-          y: { beginAtZero: true, max: 100 },
-          x: {}
-        },
+        scales: { y: { beginAtZero: true, max: 100 }, x: {} },
         plugins: { legend: { display: false } }
       }
     });
@@ -390,15 +415,31 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        scales: {
-          y: { beginAtZero: false },
-          x: {}
-        },
+        scales: { y: { beginAtZero: false }, x: {} },
         plugins: { legend: { display: false } }
       }
     });
 
-    // Funções de offset
+    function chkLim(v, mi, ma, type, unit) {
+      const alert = document.getElementById(type + '-alert');
+      const status = document.getElementById(type + '-status');
+      const minTxt = mi !== null ? mi : '--';
+      const maxTxt = ma !== null ? ma : '--';
+      status.textContent = 'Limites: ' + minTxt + ' a ' + maxTxt + ' ' + unit;
+      if (mi !== null && v < mi) {
+        alert.textContent = '⚠️ Valor ABAIXO do limite mínimo (' + mi + unit + ')';
+        alert.className = 'alert danger show';
+      } else if (ma !== null && v > ma) {
+        alert.textContent = '⚠️ Valor ACIMA do limite máximo (' + ma + unit + ')';
+        alert.className = 'alert danger show';
+      } else if (mi !== null || ma !== null) {
+        alert.textContent = '✅ Valor dentro dos limites';
+        alert.className = 'alert success show';
+      } else {
+        alert.className = 'alert';
+      }
+    }
+
     function sto() {
       let v = parseFloat(document.getElementById('toff').value);
       if (isNaN(v) || v < -50 || v > 50) {
@@ -442,13 +483,9 @@
         .catch(() => alert('Erro ao aplicar offset'));
     }
 
-    // Funções de limites
     function stm() {
       let v = parseFloat(document.getElementById('tmin').value);
-      if (
-        isNaN(v) || v < -50 || v > 100 ||
-        (lm.t.ma !== null && v >= lm.t.ma)
-      ) {
+      if (isNaN(v) || v < -50 || v > 100 || lm.t.ma !== null && v >= lm.t.ma) {
         alert('Valor inválido');
         return;
       }
@@ -462,10 +499,7 @@
 
     function stx() {
       let v = parseFloat(document.getElementById('tmax').value);
-      if (
-        isNaN(v) || v < -50 || v > 100 ||
-        (lm.t.mi !== null && v <= lm.t.mi)
-      ) {
+      if (isNaN(v) || v < -50 || v > 100 || lm.t.mi !== null && v <= lm.t.mi) {
         alert('Valor inválido');
         return;
       }
@@ -479,10 +513,7 @@
 
     function shm() {
       let v = parseFloat(document.getElementById('hmin').value);
-      if (
-        isNaN(v) || v < 0 || v > 100 ||
-        (lm.h.ma !== null && v >= lm.h.ma)
-      ) {
+      if (isNaN(v) || v < 0 || v > 100 || lm.h.ma !== null && v >= lm.h.ma) {
         alert('Valor inválido');
         return;
       }
@@ -496,10 +527,7 @@
 
     function shx() {
       let v = parseFloat(document.getElementById('hmax').value);
-      if (
-        isNaN(v) || v < 0 || v > 100 ||
-        (lm.h.mi !== null && v <= lm.h.mi)
-      ) {
+      if (isNaN(v) || v < 0 || v > 100 || lm.h.mi !== null && v <= lm.h.mi) {
         alert('Valor inválido');
         return;
       }
@@ -513,10 +541,7 @@
 
     function spm() {
       let v = parseFloat(document.getElementById('pmin').value);
-      if (
-        isNaN(v) || v < 50 || v > 150 ||
-        (lm.p.ma !== null && v >= lm.p.ma)
-      ) {
+      if (isNaN(v) || v < 50 || v > 150 || lm.p.ma !== null && v >= lm.p.ma) {
         alert('Valor inválido');
         return;
       }
@@ -530,10 +555,7 @@
 
     function spx() {
       let v = parseFloat(document.getElementById('pmax').value);
-      if (
-        isNaN(v) || v < 50 || v > 150 ||
-        (lm.p.mi !== null && v <= lm.p.mi)
-      ) {
+      if (isNaN(v) || v < 50 || v > 150 || lm.p.mi !== null && v <= lm.p.mi) {
         alert('Valor inválido');
         return;
       }
@@ -545,7 +567,6 @@
         .catch(() => alert('Erro'));
     }
 
-    // Atualização dos dados
     function upd() {
       fetch('/dados')
         .then(r => r.json())
@@ -554,6 +575,17 @@
           document.getElementById('tv').textContent = d.temperatura.toFixed(1);
           document.getElementById('hv').textContent = d.umidade.toFixed(1);
           document.getElementById('pv').textContent = d.pressao;
+
+          if (d.limiteMIN_temp !== undefined && d.limiteMIN_temp !== -2147483648) lm.t.mi = d.limiteMIN_temp; else lm.t.mi = null;
+          if (d.limiteMAX_temp !== undefined && d.limiteMAX_temp !== 2147483647) lm.t.ma = d.limiteMAX_temp; else lm.t.ma = null;
+          if (d.limiteMIN_umi !== undefined && d.limiteMIN_umi !== -2147483648) lm.h.mi = d.limiteMIN_umi; else lm.h.mi = null;
+          if (d.limiteMAX_umi !== undefined && d.limiteMAX_umi !== 2147483647) lm.h.ma = d.limiteMAX_umi; else lm.h.ma = null;
+          if (d.limiteMIN_pressao !== undefined && d.limiteMIN_pressao !== -2147483648) lm.p.mi = d.limiteMIN_pressao; else lm.p.mi = null;
+          if (d.limiteMAX_pressao !== undefined && d.limiteMAX_pressao !== 2147483647) lm.p.ma = d.limiteMAX_pressao; else lm.p.ma = null;
+
+          chkLim(d.temperatura, lm.t.mi, lm.t.ma, 't', '°C');
+          chkLim(d.umidade, lm.h.mi, lm.h.ma, 'h', '%');
+          chkLim(d.pressao, lm.p.mi, lm.p.ma, 'p', 'kPa');
           tl.push(t);
           td.push(d.temperatura);
           hd.push(d.umidade);
@@ -571,7 +603,6 @@
         .catch(e => console.error('Erro:', e));
     }
 
-    // Inicialização
     upd();
     setInterval(upd, 1000);
   </script>

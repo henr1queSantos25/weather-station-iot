@@ -16,13 +16,19 @@ add_executable(${PROJECT_NAME}
         lib/bmp280/bmp280.c
         lib/ssd1306/ssd1306.c
         lib/push_button/button.c
+        lib/rgb/rgb.c
+        lib/ws2812/ws2812.c
+        lib/buzzer/buzzer.c
         )
 
-#pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/lib/matriz/matriz.pio)
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/lib/ws2812/ws2812.pio)
 
 target_link_libraries(${PROJECT_NAME} 
         pico_stdlib       
         hardware_i2c
+        hardware_pwm
+        hardware_pio
+        hardware_clocks
         pico_cyw43_arch_lwip_threadsafe_background
         )
 
@@ -32,6 +38,9 @@ target_include_directories(${PROJECT_NAME}  PRIVATE   ${CMAKE_CURRENT_LIST_DIR}
         lib/bmp280
         lib/ssd1306
         lib/push_button
+        lib/rgb
+        lib/ws2812
+        lib/buzzer
         )
 
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
