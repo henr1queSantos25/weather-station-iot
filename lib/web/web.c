@@ -3,43 +3,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Variáveis externas (para acesso das variáveis do arquivo weather-station-iot.c)
+// ========================================================================
+// VARIÁVEIS EXTERNAS
+// ========================================================================
+// Acesso às variáveis globais do arquivo principal weather-station-iot.c
 extern float temperatura;
 extern int32_t pressao;
 extern float umidade;
+extern int limiteMAX_temp;
+extern int limiteMAX_umi;
+extern int limiteMAX_pressao;
+extern int limiteMIN_temp;
+extern int limiteMIN_umi;
+extern int limiteMIN_pressao;
+extern int offset_temp;
+extern int offset_umi;
+extern int offset_pressao;
 
+// ========================================================================
+// PROTÓTIPOS DE FUNÇÕES ESTÁTICAS (PRIVADAS)
+// ========================================================================
+static void start_http_server(void);
+static err_t connection_callback(void *arg, struct tcp_pcb *newpcb, err_t err);
+static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err);
+static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len);
 
-int inicializar_wifi(char *ip_str, char *WIFI_SSID, char *WIFI_PASS)
-{
-    // Inicialização e configuração do Wi-Fi
-    if (cyw43_arch_init())
-    {
-        printf("WiFi => FALHA\n");
-        sleep_ms(100);
-        return -1;
-    }
-
-    cyw43_arch_enable_sta_mode();
-
-    // Conexão à rede Wi-Fi
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK, 10000))
-    {
-        printf("WiFi => ERRO\n");
-        sleep_ms(100);
-        return -1;
-    }
-
-    // Exibe o endereço IP atribuído
-    uint8_t *ip = (uint8_t *)&(cyw43_state.netif[0].ip_addr.addr);
-    snprintf(ip_str, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-
-    printf("WiFi => Conectado com sucesso!\n IP: %s\n", ip_str);
-
-    return 0; // Retorna 0 para indicar sucesso
-}
-
-// HTML da interface web - Página completa com estilos CSS e JavaScript
-
+// ========================================================================
+// CONTEÚDO HTML DA INTERFACE WEB
+// ========================================================================
+// Página completa com estilos CSS e JavaScript integrados
+// Contém dashboard com gráficos, configuração de limites e calibração
 const char HTML_BODY[] =
     "<!DOCTYPE html><html lang='pt-BR'><head>"
     "<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>"
@@ -186,9 +179,62 @@ const char HTML_BODY[] =
     "upd();setInterval(upd,1000);"
     "</script></body></html>";
 
+// ========================================================================
+// FUNÇÕES PÚBLICAS DE INICIALIZAÇÃO
+// ========================================================================
 
 /**
- * Função privada que inicializa e configura o servidor HTTP
+ * @brief Inicializa a conexão Wi-Fi
+ * @param ip_str Buffer para armazenar o IP como string (mínimo 16 bytes)
+ * @param WIFI_SSID Nome da rede Wi-Fi
+ * @param WIFI_PASS Senha da rede Wi-Fi
+ * @return 0 em caso de sucesso, -1 em caso de erro
+ */
+int inicializar_wifi(char *ip_str, char *WIFI_SSID, char *WIFI_PASS)
+{
+    // === INICIALIZAÇÃO DO MÓDULO Wi-Fi ===
+    if (cyw43_arch_init())
+    {
+        printf("WiFi => FALHA na inicialização\n");
+        sleep_ms(100);
+        return -1;
+    }
+
+    // === HABILITAÇÃO DO MODO STATION (CLIENTE) ===
+    cyw43_arch_enable_sta_mode();
+
+    // === CONEXÃO À REDE Wi-Fi ===
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK, 10000))
+    {
+        printf("WiFi => ERRO na conexão\n");
+        sleep_ms(100);
+        return -1;
+    }
+
+    // === OBTENÇÃO E EXIBIÇÃO DO ENDEREÇO IP ===
+    uint8_t *ip = (uint8_t *)&(cyw43_state.netif[0].ip_addr.addr);
+    snprintf(ip_str, 16, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
+    printf("WiFi => Conectado com sucesso!\n IP: %s\n", ip_str);
+
+    return 0; // Retorna 0 para indicar sucesso
+}
+
+/**
+ * @brief Inicializa o módulo web (servidor HTTP)
+ * Esta é a função chamada pelo main() para iniciar o servidor HTTP
+ */
+void init_web(void)
+{
+    start_http_server();
+}
+
+// ========================================================================
+// FUNÇÕES PRIVADAS DO SERVIDOR HTTP
+// ========================================================================
+
+/**
+ * @brief Inicializa e configura o servidor HTTP
  * - Cria um novo PCB (Protocol Control Block) TCP
  * - Faz o bind para a porta 80 (HTTP padrão)
  * - Coloca o servidor em modo de escuta
@@ -202,36 +248,44 @@ static void start_http_server(void)
         printf("Erro ao criar PCB TCP\n");
         return;
     }
+    
     if (tcp_bind(pcb, IP_ADDR_ANY, 80) != ERR_OK)
     {
-        printf("Erro ao ligar o servidor na porta 80\n");
+        printf("Erro ao fazer bind do servidor na porta 80\n");
         return;
     }
+    
     pcb = tcp_listen(pcb);
     tcp_accept(pcb, connection_callback);
     printf("Servidor HTTP rodando na porta 80...\n");
 }
 
 /**
- * Função pública para inicializar o módulo web
- * Esta é a função chamada pelo main() para iniciar o servidor HTTP
+ * @brief Callback chamado quando uma nova conexão TCP é estabelecida
+ * @param arg Argumento customizado (não utilizado)
+ * @param newpcb Novo PCB da conexão estabelecida
+ * @param err Status de erro da conexão
+ * @return ERR_OK para aceitar a conexão
  */
-void init_web(void)
+static err_t connection_callback(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
-    // Inicializa o servidor HTTP
-    start_http_server();
+    tcp_recv(newpcb, http_recv);
+    return ERR_OK;
 }
 
 /**
- * - Callback chamado quando dados são enviados com sucesso via TCP
- * - Atualiza o contador de bytes enviados
- * - Fecha a conexão quando todos os dados foram enviados
- * - Libera a memória alocada para o estado HTTP
+ * @brief Callback chamado quando dados são enviados com sucesso via TCP
+ * @param arg Ponteiro para estrutura http_state
+ * @param tpcb PCB da conexão TCP
+ * @param len Número de bytes enviados com sucesso
+ * @return ERR_OK sempre
  */
 static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
 {
     struct http_state *hs = (struct http_state *)arg;
     hs->sent += len;
+    
+    // === FECHAMENTO DA CONEXÃO APÓS ENVIO COMPLETO ===
     if (hs->sent >= hs->len)
     {
         tcp_close(tpcb);
@@ -241,15 +295,16 @@ static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len)
 }
 
 /**
- * Callback principal que processa requisições HTTP recebidas
- * - Analisa o tipo de requisição (GET, POST, etc.)
- * - Gera resposta apropriada (HTML ou JSON)
- * - Envia resposta de volta ao cliente
- * - Gerencia memória e conexão TCP
+ * @brief Callback principal que processa requisições HTTP recebidas
+ * @param arg Argumento customizado (não utilizado)
+ * @param tpcb PCB da conexão TCP
+ * @param p Buffer com dados recebidos
+ * @param err Status de erro
+ * @return ERR_OK em caso de sucesso, ERR_MEM em caso de falta de memória
  */
 static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
 {
-    // Se não há dados, fecha a conexão
+    // === VERIFICAÇÃO DE DADOS RECEBIDOS ===
     if (!p)
     {
         tcp_close(tpcb);
@@ -257,6 +312,8 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
     }
 
     char *req = (char *)p->payload;
+    
+    // === ALOCAÇÃO DE MEMÓRIA PARA ESTADO HTTP ===
     struct http_state *hs = malloc(sizeof(struct http_state));
     if (!hs)
     {
@@ -266,7 +323,11 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
     }
     hs->sent = 0;
 
-    // Rota para status em JSON - retorna dados atuais do sistema
+    // ========================================================================
+    // ROTEAMENTO DE REQUISIÇÕES HTTP
+    // ========================================================================
+
+    // === ROTA: /dados (JSON com dados dos sensores) ===
     if (strstr(req, "GET /dados")) {
         char json_payload[256];
         int json_len = snprintf(json_payload, sizeof(json_payload),
@@ -279,8 +340,6 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                             limiteMIN_umi, limiteMAX_umi,
                             limiteMIN_pressao, limiteMAX_pressao);
 
-        //printf("[DEBUG] JSON: %s\n", json_payload);
-
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: application/json\r\n"
@@ -289,11 +348,14 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            json_len, json_payload);
-    } else if (strstr(req, "GET /config/limiteMAX_temp/")) {
+    } 
+    // === ROTAS: Configuração de limites máximos ===
+    else if (strstr(req, "GET /config/limiteMAX_temp/")) {
         char *pos = strstr(req, "/config/limiteMAX_temp/") + strlen("/config/limiteMAX_temp/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
+        // Extração do valor numérico da URL
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -304,9 +366,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMAX_temp = novo_limite;
 
-        printf("[DEBUG] Novo limite máximo: %d\n", limiteMAX_temp);
+        printf("[DEBUG] Novo limite máximo de temperatura: %d°C\n", limiteMAX_temp);
 
-        const char *txt = "Limite máximo atualizado";
+        const char *txt = "Limite máximo de temperatura atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -315,11 +377,12 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-    } else if (strstr(req, "GET /config/limiteMAX_umi/")) {
+    } 
+    else if (strstr(req, "GET /config/limiteMAX_umi/")) {
         char *pos = strstr(req, "/config/limiteMAX_umi/") + strlen("/config/limiteMAX_umi/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -330,9 +393,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMAX_umi = novo_limite;
 
-        printf("[DEBUG] Novo limite máximo: %d\n", limiteMAX_umi);
+        printf("[DEBUG] Novo limite máximo de umidade: %d%%\n", limiteMAX_umi);
 
-        const char *txt = "Limite máximo atualizado";
+        const char *txt = "Limite máximo de umidade atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -341,12 +404,12 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/limiteMAX_pressao/")) {
+    } 
+    else if (strstr(req, "GET /config/limiteMAX_pressao/")) {
         char *pos = strstr(req, "/config/limiteMAX_pressao/") + strlen("/config/limiteMAX_pressao/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -357,9 +420,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMAX_pressao = novo_limite;
 
-        printf("[DEBUG] Novo limite máximo: %d\n", limiteMAX_pressao);
+        printf("[DEBUG] Novo limite máximo de pressão: %dkPa\n", limiteMAX_pressao);
 
-        const char *txt = "Limite máximo atualizado";
+        const char *txt = "Limite máximo de pressão atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -368,12 +431,13 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/limiteMIN_temp/")) {
+    } 
+    // === ROTAS: Configuração de limites mínimos ===
+    else if (strstr(req, "GET /config/limiteMIN_temp/")) {
         char *pos = strstr(req, "/config/limiteMIN_temp/") + strlen("/config/limiteMIN_temp/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -384,9 +448,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMIN_temp = novo_limite;
 
-        printf("[DEBUG] Novo limite mínimo: %d\n", limiteMIN_temp);
+        printf("[DEBUG] Novo limite mínimo de temperatura: %d°C\n", limiteMIN_temp);
 
-        const char *txt = "Limite mínimo atualizado";
+        const char *txt = "Limite mínimo de temperatura atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -395,12 +459,12 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/limiteMIN_umi/")) {
+    } 
+    else if (strstr(req, "GET /config/limiteMIN_umi/")) {
         char *pos = strstr(req, "/config/limiteMIN_umi/") + strlen("/config/limiteMIN_umi/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -411,9 +475,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMIN_umi = novo_limite;
 
-        printf("[DEBUG] Novo limite mínimo: %d\n", limiteMIN_umi);
+        printf("[DEBUG] Novo limite mínimo de umidade: %d%%\n", limiteMIN_umi);
 
-        const char *txt = "Limite mínimo atualizado";
+        const char *txt = "Limite mínimo de umidade atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -422,93 +486,12 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/offset_temp/")) {
-        char *pos = strstr(req, "/config/offset_temp/") + strlen("/config/offset_temp/");
-        char valor_str[16] = {0};
-        int i = 0;
-        // Extrai o valor numérico da URL
-        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
-        {
-            valor_str[i] = pos[i];
-            i++;
-        }
-        valor_str[i] = '\0';
-
-        int novo_offset = atoi(valor_str);
-        offset_temp = novo_offset;
-
-        printf("[DEBUG] Novo offset: %d\n", offset_temp);
-
-        const char *txt = "Offset atualizado";
-        hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: text/plain\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/offset_umi/")) {
-        char *pos = strstr(req, "/config/offset_umi/") + strlen("/config/offset_umi/");
-        char valor_str[16] = {0};
-        int i = 0;
-        // Extrai o valor numérico da URL
-        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
-        {
-            valor_str[i] = pos[i];
-            i++;
-        }
-        valor_str[i] = '\0';
-
-        int novo_offset = atoi(valor_str);
-        offset_umi = novo_offset;
-
-        printf("[DEBUG] Novo offset: %d\n", offset_umi);
-
-        const char *txt = "Offset atualizado";
-        hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: text/plain\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/offset_pressao/")) {
-        char *pos = strstr(req, "/config/offset_pressao/") + strlen("/config/offset_pressao/");
-        char valor_str[16] = {0};
-        int i = 0;
-        // Extrai o valor numérico da URL
-        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
-        {
-            valor_str[i] = pos[i];
-            i++;
-        }
-        valor_str[i] = '\0';
-
-        int novo_offset = atoi(valor_str);
-        offset_pressao = novo_offset;
-
-        printf("[DEBUG] Novo offset: %d\n", offset_pressao);
-
-        const char *txt = "Offset atualizado";
-        hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: text/plain\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           (int)strlen(txt), txt);
-
-    } else if (strstr(req, "GET /config/limiteMIN_pressao/")) {
+    } 
+    else if (strstr(req, "GET /config/limiteMIN_pressao/")) {
         char *pos = strstr(req, "/config/limiteMIN_pressao/") + strlen("/config/limiteMIN_pressao/");
         char valor_str[16] = {0};
         int i = 0;
-        // Extrai o valor numérico da URL
+        
         while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
         {
             valor_str[i] = pos[i];
@@ -519,9 +502,9 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         int novo_limite = atoi(valor_str);
         limiteMIN_pressao = novo_limite;
 
-        printf("[DEBUG] Novo limite mínimo: %d\n", limiteMIN_pressao);
+        printf("[DEBUG] Novo limite mínimo de pressão: %dkPa\n", limiteMIN_pressao);
 
-        const char *txt = "Limite mínimo atualizado";
+        const char *txt = "Limite mínimo de pressão atualizado";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -530,8 +513,90 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "\r\n"
                            "%s",
                            (int)strlen(txt), txt);
-
     } 
+    // === ROTAS: Configuração de offsets de calibração ===
+    else if (strstr(req, "GET /config/offset_temp/")) {
+        char *pos = strstr(req, "/config/offset_temp/") + strlen("/config/offset_temp/");
+        char valor_str[16] = {0};
+        int i = 0;
+        
+        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
+        {
+            valor_str[i] = pos[i];
+            i++;
+        }
+        valor_str[i] = '\0';
+
+        int novo_offset = atoi(valor_str);
+        offset_temp = novo_offset;
+
+        printf("[DEBUG] Novo offset de temperatura: %d°C\n", offset_temp);
+
+        const char *txt = "Offset de temperatura atualizado";
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+                           "HTTP/1.1 200 OK\r\n"
+                           "Content-Type: text/plain\r\n"
+                           "Content-Length: %d\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "%s",
+                           (int)strlen(txt), txt);
+    } 
+    else if (strstr(req, "GET /config/offset_umi/")) {
+        char *pos = strstr(req, "/config/offset_umi/") + strlen("/config/offset_umi/");
+        char valor_str[16] = {0};
+        int i = 0;
+        
+        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
+        {
+            valor_str[i] = pos[i];
+            i++;
+        }
+        valor_str[i] = '\0';
+
+        int novo_offset = atoi(valor_str);
+        offset_umi = novo_offset;
+
+        printf("[DEBUG] Novo offset de umidade: %d%%\n", offset_umi);
+
+        const char *txt = "Offset de umidade atualizado";
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+                           "HTTP/1.1 200 OK\r\n"
+                           "Content-Type: text/plain\r\n"
+                           "Content-Length: %d\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "%s",
+                           (int)strlen(txt), txt);
+    } 
+    else if (strstr(req, "GET /config/offset_pressao/")) {
+        char *pos = strstr(req, "/config/offset_pressao/") + strlen("/config/offset_pressao/");
+        char valor_str[16] = {0};
+        int i = 0;
+        
+        while (pos[i] != ' ' && pos[i] != '\r' && pos[i] != '\n' && pos[i] != '\0' && i < 15)
+        {
+            valor_str[i] = pos[i];
+            i++;
+        }
+        valor_str[i] = '\0';
+
+        int novo_offset = atoi(valor_str);
+        offset_pressao = novo_offset;
+
+        printf("[DEBUG] Novo offset de pressão: %dkPa\n", offset_pressao);
+
+        const char *txt = "Offset de pressão atualizado";
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+                           "HTTP/1.1 200 OK\r\n"
+                           "Content-Type: text/plain\r\n"
+                           "Content-Length: %d\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "%s",
+                           (int)strlen(txt), txt);
+    } 
+    // === ROTA: Página principal (HTML) ===
     else {
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
@@ -543,7 +608,7 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            (int)strlen(HTML_BODY), HTML_BODY);
     }
 
-    // Configura callbacks e envia resposta
+    // === CONFIGURAÇÃO E ENVIO DA RESPOSTA ===
     tcp_arg(tpcb, hs);
     tcp_sent(tpcb, http_sent);
 
@@ -551,16 +616,5 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
     tcp_output(tpcb);
 
     pbuf_free(p);
-    return ERR_OK;
-}
-
-/**
- * Callback chamado quando uma nova conexão TCP é estabelecida
- * - Configura o callback para receber dados HTTP
- * - Retorna ERR_OK para aceitar a conexão
- */
-static err_t connection_callback(void *arg, struct tcp_pcb *newpcb, err_t err)
-{
-    tcp_recv(newpcb, http_recv);
     return ERR_OK;
 }

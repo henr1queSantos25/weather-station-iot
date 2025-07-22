@@ -14,19 +14,6 @@ struct http_state {
     size_t sent;
 };
 
-// Limites para os sensores (temperatura, umidade, pressão)
-extern int limiteMAX_temp;
-extern int limiteMAX_umi;
-extern int limiteMAX_pressao;
-extern int limiteMIN_temp;
-extern int limiteMIN_umi;
-extern int limiteMIN_pressao;
-
-// Offsets de calibração para os sensores (temperatura, umidade, pressão)
-extern int offset_temp;
-extern int offset_umi;
-extern int offset_pressao;
-
 // --- ASSINATURA DAS FUNÇÕES ---
 static void start_http_server(void);
 void init_web(void);
