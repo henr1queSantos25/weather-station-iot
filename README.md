@@ -296,4 +296,5 @@ Valores padrão do sistema:
 ## Desenvolvido por
 
 Henrique Oliveira dos Santos  
-[LinkedIn](https://www.linkedin.com/in/dev-henriqueo-santos/)
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/dev-henriqueo-santos/)
