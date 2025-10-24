@@ -247,6 +247,7 @@ void ssd1306_draw_bitmap(ssd1306_t *ssd, const uint8_t *bitmap) {
 }
 
 void drawImage(ssd1306_t *ssd, const uint32_t desenho[8192]) {
+  ssd1306_fill(ssd, false);
   // Desenho feito ao exportar o arquivo no Piskelapp automatizado
   for (int j = 0; j < 64; j++)
   {

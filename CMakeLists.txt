@@ -10,10 +10,10 @@ pico_sdk_init()
 include_directories(${CMAKE_SOURCE_DIR}/lib)
 
 add_executable(${PROJECT_NAME}  
-        weather-station-iot.c
+        main.c
         lib/web/web.c
         lib/aht20/aht20.c
-        lib/bmp280/bmp280.c
+        lib/bh1750/bh1750.c
         lib/ssd1306/ssd1306.c
         lib/push_button/button.c
         lib/rgb/rgb.c
@@ -35,7 +35,7 @@ target_link_libraries(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME}  PRIVATE   ${CMAKE_CURRENT_LIST_DIR} 
         lib/web
         lib/aht20
-        lib/bmp280
+        lib/bh1750
         lib/ssd1306
         lib/push_button
         lib/rgb
